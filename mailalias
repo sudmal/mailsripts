@@ -1,0 +1,162 @@
+#!/bin/bash
+
+
+ALIAS_FILE=/etc/aliases
+bkpath=/srv/backup/mailalias
+LOGFILE=/var/log/mailscript.log
+DATE=`date +"%F %H:%M:%S"`
+
+WHITE='\033[0;37m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root or sudo user. Run   'sudo bash'" 1>&2
+   exit 1
+fi
+
+if [ ! "$1" == "list" ];then
+    if [ $# -ne 3 ]; 
+	then 
+#	    echo -en "\033[0;31m!!!\033[0m illegal number of parameters.\n\n"
+    	    echo -en  "Format:\n\t$0 {add|del} {aliasname} {username}\n"
+    	    echo -en  "\t$0 {list} [aliasname]\n\n"
+	exit 1
+    fi
+fi
+
+
+
+param1=$1
+param2=$2
+param3=$3
+
+action=`echo $param1|tr '[:upper:]' '[:lower:]'`
+alias=`echo $param2|tr '[:upper:]' '[:lower:]'`
+username=`echo $param3|tr '[:upper:]' '[:lower:]'`
+
+
+function backup_conf()
+{
+    mkdir -p $bkpath
+    bkdate=`date +%F_%H-%M-%S`
+    bkfile=`echo $bkdate'-'$SUDO_USER'-aliases'`
+    cp $ALIAS_FILE $bkpath/$bkfile 
+}
+
+function do_checks() {
+    echo "Check if username $username is valid..."
+    echo $username| egrep -iq '(^[a-z0-9_-]{2,30}$)'>/dev/null; RC=$?
+    if [ ${RC} -ne 0 ]
+    then
+	echo -en "\033[0;31m Error! \033[0m Invalid username '$username', please ensure 'userna_me' format - 2-30 symbols: 0-9 a-z _ \n"
+	exit 1
+    fi
+
+    echo "Check if aliasname '$alias' is valid..."
+    echo $alias| egrep -iq '(^[a-z0-9_-]{2,30}$)'>/dev/null; RC=$?
+    if [ ${RC} -ne 0 ]
+    then
+	echo -en "\033[0;31m Error! \033[0m Invalid aliasname '$alias', please ensure aliasname format - 2-30 symbols: 0-9 a-z _ \n"
+	exit 1
+    fi
+
+    echo "Check if username is exist..."
+    if [ "$action" == "add" ];then
+	cat /etc/passwd|awk -F":" '{print $1}'|grep -w "$username">/dev/null; RC2=$?
+	if [ ${RC2} -eq 1 ]
+	then
+	    echo -en "\033[0;31m Error! \033[0m Username '$username' is not exist as system account! Exiting\n"
+	    exit 1
+	fi
+    fi
+}
+
+
+
+function add_to_alias() {
+    do_checks
+    backup_conf
+    cat $ALIAS_FILE|grep "^$alias:"|awk -F":" '{print $2}'| sed "s/,/ /g"|grep -w $username>/dev/null; RC1=$? #check username already in alias
+	if [ ${RC1} -eq 0 ]
+	    then
+		echo "Alias $alias already have user $username. Exit..."
+		echo "$DATE SCRIPT:$0 USER:$SUDO_USER Alias $alias already have user $username. Exit">>$LOGFILE
+		exit 1
+	fi
+    cat $ALIAS_FILE|awk -F":" '{print $1}'|grep -w "^$alias">/dev/null; RC2=$? # check alias exist
+    if [ ${RC2} -eq 0 ]
+    then
+	sed -i "/^$alias:/ s/$/,$username/" $ALIAS_FILE
+	echo "Adding $username in $alias"
+    else
+	echo "Alias $alias doesn't exist. Creating..."
+	echo "$alias:$username">>$ALIAS_FILE
+	echo "$DATE SCRIPT:$0 USER:$SUDO_USER Alias $alias doesn't exist. Creating">>$LOGFILE
+    fi	
+    /usr/bin/newaliases
+}
+
+function del_from_alias() {
+    do_checks
+    backup_conf
+    cat $ALIAS_FILE|awk -F":" '{print $1}'|grep -w "^$alias">/dev/null; RC1=$? # check if alias exist
+    if [ ${RC1} -eq 0 ]
+    then
+	cat $ALIAS_FILE|grep "^$alias:"|awk -F":" '{print $2}'| sed "s/,/ /g"|grep -w $username>/dev/null; RC2=$? #check username exist in alias
+	if [ ${RC2} -eq 0 ]
+	then
+	    sed -i  "/^$alias:/ s/$username//" $ALIAS_FILE
+	    sed -i 's/,,/,/' $ALIAS_FILE
+	    sed -i 's/,$//' $ALIAS_FILE
+	    sed -i 's/:,/:/' $ALIAS_FILE
+	    sed -i 's/ ,//' $ALIAS_FILE
+	    OUTP=`cat $ALIAS_FILE|grep "^$alias:"|awk -F":" '{print $2}'|sed "s/ //g"`
+	    if [ ! -n "$OUTP" ]; then
+		echo "Alias $alias is empty. Deleting..."
+		echo "$DATE SCRIPT:$0 USER:$SUDO_USER Alias $alias is empty. Deleting">>$LOGFILE
+		sed -i "/^$alias:/d" $ALIAS_FILE
+	    fi	    
+	else
+	    echo "Alias $alias doesn't contain $username. Exit..."
+	    exit 1
+	fi
+    else
+	echo "Alias $alias doesn't exist. Exit..."
+	exit 1
+    fi
+
+    /usr/bin/newaliases
+}
+
+function list_alias() {
+	if [ ! -z $alias ];then
+            cat $ALIAS_FILE|grep "^$alias:"|awk -F":" '{print "\033[0;33m"$1"\033[0m:\t"$2}'| sed "s/,/ /g"
+	else 
+	    less $ALIAS_FILE|awk -F":" '{print "\033[0;33m"$1"\033[0m:\t"$2}'| sed "s/,/ /g"
+	fi
+}
+
+case $action in
+     add)
+	add_to_alias
+	list_alias
+	echo "Adding $username to $alias alias done."
+	echo "$DATE SCRIPT:$0 USER:$SUDO_USER PARAMS:$1 $2 $3">>$LOGFILE
+	echo -en "\033[1;32m All done.\033[0m \n"
+          ;;
+     del)
+	del_from_alias
+	echo "Deleting $username from $alias done."
+	echo "$DATE SCRIPT:$0 USER:$SUDO_USER PARAMS:$1 $2 $3">>$LOGFILE
+        echo -en "\033[1;32m All done.\033[0m \n"
+	  ;;
+     list)
+	list_alias
+	echo "$DATE SCRIPT:$0 USER:$SUDO_USER PARAMS:$1 $2">>$LOGFILE
+          ;; 
+     *)
+        echo -en  "Format:\n\t$0 {add|del} {aliasname} {username}\n"
+        echo -en  "\t$0 {list} [aliasname]\n\n"
+	;;
+esac

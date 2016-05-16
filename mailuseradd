@@ -1,0 +1,85 @@
+#!/bin/bash
+
+LOGFILE=/var/log/mailscript.log
+DATE=`date +"%F %H:%M:%S"`
+
+
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root or sudo user. Run   'sudo bash'" 1>&2
+   exit 1
+fi
+
+
+
+if [ $# -ne 1 ]; 
+    then 
+#    echo -en "\033[0;31m!!!\033[0m illegal number of parameters.\n\n"
+    echo -en  "Format:\n\t$0 username\n\n"
+    exit 1
+fi
+
+
+
+
+readstr=$1
+username=`echo $readstr|tr '[:upper:]' '[:lower:]'`
+
+
+
+
+function validate_username() {
+echo "Check if username is valid..."
+echo $username| egrep -iq '(^[a-z0-9_-]{3,30}$)'>/dev/null; RC=$?
+if [ ${RC} -ne 0 ]
+then
+echo -en "\033[0;31m Error! \033[0m Invalid username '$username', please ensure 'userna_me' format - 3-30 symbols:0-9,a-z,_ \n"
+exit 1
+echo "Ok..."
+fi
+
+echo "Check if username is unique..."
+cat /etc/passwd|awk -F":" '{print $1}'|grep -w "$username">/dev/null; RC2=$?
+if [ ${RC2} -eq 0 ]
+then
+echo -en "\033[0;31m Error! \033[0m Username '$username' already exist as system account! Exiting\n"
+exit 1
+echo "Ok..."
+fi
+
+cat /etc/aliases|awk -F":" '{print $1}'|grep -w "$username">/dev/null; RC2=$?
+if [ ${RC2} -eq 0 ]
+then
+echo  -en "\033[0;31m Error! \033[0m Username '$username' already exist as mailalias! Exiting\n"
+exit 1
+echo "Ok..."
+fi
+
+}
+
+function update_everyone() {
+
+sed -i "/^everyone7887:/ s/$/,$username/" /etc/aliases
+echo "$DATE SCRIPT:$0 USER:$SUDO_USER Update everyone alias with user $username">>$LOGFILE
+/usr/bin/newaliases
+}
+
+function send_newaccount_to_postmaster(){
+echo -en "Hello.\n\n\tUsername:\t$username\n\tPassword:\t$passstring\n"|mail -s "New mail account: $username" $SUDO_USER@vesy.com.ua
+echo -en "Hello.\n\n\tUsername:\t$username\n\tPassword:\t$passstring\n"|mail -s "New mail account: $username" postmaster@vesy.com.ua
+#echo -en "Hello.\n\n\tUsername:\t$username\n\tPassword:\t$passstring\n"|mail -s "New mail account: $username" $username@vesy.com.ua
+}
+
+
+
+
+validate_username
+echo "Generating password..."
+passstring=`/usr/bin/apg -a0 -n1 -m9 -x9  -M NCL`
+echo -e "Created login:pass:\t\t$username:$passstring"
+/usr/sbin/useradd -m -d /home/$username -s /usr/sbin/nologin -U $username
+echo -e "$passstring\n$passstring\n" | passwd $username
+echo "$DATE SCRIPT:$0 USER:$SUDO_USER Creating user $username done">>$LOGFILE
+echo "Update aliases...."
+update_everyone
+send_newaccount_to_postmaster
+echo -en "\033[0;31m All done.\033[0m \n"
