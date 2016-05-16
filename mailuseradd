@@ -64,9 +64,9 @@ echo "$DATE SCRIPT:$0 USER:$SUDO_USER Update everyone alias with user $username"
 }
 
 function send_newaccount_to_postmaster(){
-echo -en "Hello.\n\n\tUsername:\t$username\n\tPassword:\t$passstring\n"|mail -s "New mail account: $username" $SUDO_USER@vesy.com.ua
-echo -en "Hello.\n\n\tUsername:\t$username\n\tPassword:\t$passstring\n"|mail -s "New mail account: $username" postmaster@vesy.com.ua
-#echo -en "Hello.\n\n\tUsername:\t$username\n\tPassword:\t$passstring\n"|mail -s "New mail account: $username" $username@vesy.com.ua
+echo -en "Hello.\n\n\tUsername:\t$username\n\tPassword:\t$passstring\n"|mail -s "New mail account: $username" $SUDO_USER@domain.tld
+echo -en "Hello.\n\n\tUsername:\t$username\n\tPassword:\t$passstring\n"|mail -s "New mail account: $username" postmaster@domain.tld
+#echo -en "Hello.\n\n\tUsername:\t$username\n\tPassword:\t$passstring\n"|mail -s "New mail account: $username" $username@domain.tld
 }
 
 
